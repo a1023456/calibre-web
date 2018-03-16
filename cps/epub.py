@@ -12,7 +12,7 @@ def extractCover(zipFile, coverFile, coverpath, tmp_file_name):
     if coverFile is None:
         return None
     else:
-        zipCoverPath = os.path.join(coverpath , coverFile).replace('\\','/')
+        zipCoverPath = os.path.join(coverpath, coverFile).replace('\\', '/')
         cf = zipFile.read(zipCoverPath)
         prefix = os.path.splitext(tmp_file_name)[0]
         tmp_cover_name = prefix + '.' + os.path.basename(zipCoverPath)
@@ -43,12 +43,15 @@ def get_epub_info(tmp_file_path, original_file_name, original_file_extension):
 
     epub_metadata = {}
 
-    for s in ['title', 'description', 'creator', 'language']:
+    for s in ['title', 'description', 'creator', 'language', 'subject']:
         tmp = p.xpath('dc:%s/text()' % s, namespaces=ns)
         if len(tmp) > 0:
             epub_metadata[s] = p.xpath('dc:%s/text()' % s, namespaces=ns)[0]
         else:
             epub_metadata[s] = "Unknown"
+
+    if epub_metadata['subject'] == "Unknown":
+        epub_metadata['subject'] = ''
 
     if epub_metadata['description'] == "Unknown":
         description = tree.xpath("//*[local-name() = 'description']/text()")
@@ -68,6 +71,18 @@ def get_epub_info(tmp_file_path, original_file_name, original_file_extension):
         else:
             epub_metadata['language'] = ""
 
+    series = tree.xpath("/pkg:package/pkg:metadata/pkg:meta[@name='calibre:series']/@content", namespaces=ns)
+    if len(series) > 0:
+        epub_metadata['series'] = series[0]
+    else:
+        epub_metadata['series'] = ''
+
+    series_id = tree.xpath("/pkg:package/pkg:metadata/pkg:meta[@name='calibre:series_index']/@content", namespaces=ns)
+    if len(series_id) > 0:
+        epub_metadata['series_id'] = series_id[0]
+    else:
+        epub_metadata['series_id'] = '1'
+
     coversection = tree.xpath("/pkg:package/pkg:manifest/pkg:item[@id='cover-image']/@href", namespaces=ns)
     coverfile = None
     if len(coversection) > 0:
@@ -78,7 +93,7 @@ def get_epub_info(tmp_file_path, original_file_name, original_file_extension):
             coversection = tree.xpath("/pkg:package/pkg:manifest/pkg:item[@id='"+meta_cover[0]+"']/@href", namespaces=ns)
             if len(coversection) > 0:
                 filetype = coversection[0].rsplit('.', 1)[-1]
-                if filetype == "xhtml" or filetype == "html":  #if cover is (x)html format
+                if filetype == "xhtml" or filetype == "html":  # if cover is (x)html format
                     markup = epubZip.read(os.path.join(coverpath, coversection[0]))
                     markupTree = etree.fromstring(markup)
                     # no matter xhtml or html with no namespace
@@ -101,7 +116,7 @@ def get_epub_info(tmp_file_path, original_file_name, original_file_extension):
         author=epub_metadata['creator'].encode('utf-8').decode('utf-8'),
         cover=coverfile,
         description=epub_metadata['description'],
-        tags="",
-        series="",
-        series_id="",
+        tags=epub_metadata['subject'].encode('utf-8').decode('utf-8'),
+        series=epub_metadata['series'].encode('utf-8').decode('utf-8'),
+        series_id=epub_metadata['series_id'].encode('utf-8').decode('utf-8'),
         languages=epub_metadata['language'])

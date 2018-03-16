@@ -4,7 +4,7 @@
 
     {% if entries|length < 1 %}
       <h2>{{_('No Results for:')}} {{searchterm}}</h2>
-      <p>{{_('Please try a diffrent Search')}}</p>
+      <p>{{_('Please try a different search')}}</p>
     {% else %}
       <h2>{{entries|length}} {{_('Results for:')}} {{searchterm}}</h2>
     {%endif%}
@@ -15,8 +15,8 @@
     <div class="col-sm-3 col-lg-2 col-xs-6 book">
       <div class="cover">
         {% if entry.has_cover is defined %}
-           <a href="{{ url_for('show_book', book_id=entry.id) }}">
-            <img src="{{ url_for('get_cover', cover_path=entry.path.replace('\\','/')) }}" />
+           <a href="{{ url_for('show_book', book_id=entry.id) }}" data-toggle="modal" data-target="#bookDetailsModal" data-remote="false">
+            <img src="{{ url_for('get_cover', cover_path=entry.path.replace('\\','/')) }}" alt="{{ entry.title }}" />
           </a>
         {% endif %}
       </div>
@@ -24,7 +24,7 @@
         <p class="title">{{entry.title|shortentitle}}</p>
         <p class="author">
           {% for author in entry.authors %}
-            <a href="{{url_for('author', book_id=author.id ) }}">{{author.name}}</a>
+            <a href="{{url_for('author', book_id=author.id ) }}">{{author.name.replace('|',',')}}</a>
             {% if not loop.last %}
               &amp;
             {% endif %}

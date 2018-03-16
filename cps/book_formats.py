@@ -5,6 +5,7 @@ import logging
 import uploader
 import os
 from flask_babel import gettext as _
+import comic
 
 __author__ = 'lemmsh'
 
@@ -49,8 +50,11 @@ def process(tmp_file_path, original_file_name, original_file_extension):
             meta = epub.get_epub_info(tmp_file_path, original_file_name, original_file_extension)
         if ".FB2" == original_file_extension.upper() and use_fb2_meta is True:
             meta = fb2.get_fb2_info(tmp_file_path, original_file_extension)
-    except Exception as e:
-        logger.warning('cannot parse metadata, using default: %s', e)
+        if original_file_extension.upper() in ['.CBZ', '.CBT']:
+            meta = comic.get_comic_info(tmp_file_path, original_file_name, original_file_extension)
+
+    except Exception as ex:
+        logger.warning('cannot parse metadata, using default: %s', ex)
 
     if meta and meta.title.strip() and meta.author.strip():
         return meta
@@ -111,6 +115,7 @@ def pdf_preview(tmp_file_path, tmp_dir):
             img.save(filename=os.path.join(tmp_dir, cover_file_name))
         return cover_file_name
 
+
 def get_versions():
     if not use_generic_pdf_cover:
         IVersion=ImageVersion.MAGICK_VERSION
@@ -120,4 +125,4 @@ def get_versions():
         PVersion=PyPdfVersion
     else:
         PVersion=_(u'not installed')
-    return {'ImageVersion':IVersion,'PyPdfVersion':PVersion}
+    return {'ImageVersion': IVersion, 'PyPdfVersion': PVersion}

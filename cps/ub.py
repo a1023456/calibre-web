@@ -6,14 +6,17 @@ from sqlalchemy import exc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import *
 from flask_login import AnonymousUserMixin
+import sys
 import os
 import logging
 from werkzeug.security import generate_password_hash
 from flask_babel import gettext as _
 import json
+import datetime
+from binascii import hexlify
+import cli
 
-dbpath = os.path.join(os.path.normpath(os.getenv("CALIBRE_DBPATH", os.path.dirname(os.path.realpath(__file__)) + os.sep + ".." + os.sep)), "app.db")
-engine = create_engine('sqlite:///{0}'.format(dbpath), echo=False)
+engine = create_engine('sqlite:///{0}'.format(cli.settingspath), echo=False)
 Base = declarative_base()
 
 ROLE_USER = 0
@@ -36,19 +39,19 @@ SIDEBAR_RANDOM = 32
 SIDEBAR_AUTHOR = 64
 SIDEBAR_BEST_RATED = 128
 SIDEBAR_READ_AND_UNREAD = 256
+SIDEBAR_RECENT = 512
+SIDEBAR_SORTED = 1024
+
 
 DEFAULT_PASS = "admin123"
 DEFAULT_PORT = int(os.environ.get("CALIBRE_PORT", 8083))
 
 
-
 DEVELOPMENT = False
 
 
-
-
 class UserBase:
-    @staticmethod
+    @property
     def is_authenticated(self):
         return True
 
@@ -94,11 +97,11 @@ class UserBase:
     def role_delete_books(self):
         return bool((self.role is not None)and(self.role & ROLE_DELETE_BOOKS == ROLE_DELETE_BOOKS))
 
-    @classmethod
+    @property
     def is_active(self):
         return True
 
-    @classmethod
+    @property
     def is_anonymous(self):
         return False
 
@@ -116,6 +119,12 @@ class UserBase:
 
     def show_hot_books(self):
         return bool((self.sidebar_view is not None)and(self.sidebar_view & SIDEBAR_HOT == SIDEBAR_HOT))
+
+    def show_recent(self):
+        return bool((self.sidebar_view is not None)and(self.sidebar_view & SIDEBAR_RECENT == SIDEBAR_RECENT))
+
+    def show_sorted(self):
+        return bool((self.sidebar_view is not None)and(self.sidebar_view & SIDEBAR_SORTED == SIDEBAR_SORTED))
 
     def show_series(self):
         return bool((self.sidebar_view is not None)and(self.sidebar_view & SIDEBAR_SERIES == SIDEBAR_SERIES))
@@ -150,11 +159,12 @@ class User(UserBase, Base):
     role = Column(SmallInteger, default=ROLE_USER)
     password = Column(String)
     kindle_mail = Column(String(120), default="")
-    shelf = relationship('Shelf', backref='user', lazy='dynamic')
+    shelf = relationship('Shelf', backref='user', lazy='dynamic', order_by='Shelf.name')
     downloads = relationship('Downloads', backref='user', lazy='dynamic')
     locale = Column(String(2), default="en")
     sidebar_view = Column(Integer, default=1)
     default_language = Column(String(3), default="all")
+    mature_content = Column(Boolean, default=True)
 
 
 # Class for anonymous user is derived from User base and complets overrides methods and properties for the
@@ -164,23 +174,31 @@ class Anonymous(AnonymousUserMixin, UserBase):
         self.loadSettings()
 
     def loadSettings(self):
-        data = session.query(User).filter(User.role.op('&')(ROLE_ANONYMOUS) == ROLE_ANONYMOUS).first()
+        data = session.query(User).filter(User.role.op('&')(ROLE_ANONYMOUS) == ROLE_ANONYMOUS).first()  # type: User
         settings = session.query(Settings).first()
         self.nickname = data.nickname
         self.role = data.role
+        self.id=data.id
         self.sidebar_view = data.sidebar_view
         self.default_language = data.default_language
         self.locale = data.locale
+        self.mature_content = data.mature_content
         self.anon_browse = settings.config_anonbrowse
 
     def role_admin(self):
         return False
 
+    @property
     def is_active(self):
         return False
 
+    @property
     def is_anonymous(self):
         return self.anon_browse
+
+    @property
+    def is_authenticated(self):
+        return False
 
 
 # Baseclass representing Shelfs in calibre-web inapp.db
@@ -208,13 +226,24 @@ class BookShelf(Base):
     def __repr__(self):
         return '<Book %r>' % self.id
 
+
 class ReadBook(Base):
     __tablename__ = 'book_read_link'
 
-    id=Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True)
     book_id = Column(Integer, unique=False)
-    user_id =Column(Integer, ForeignKey('user.id'), unique=False)
+    user_id = Column(Integer, ForeignKey('user.id'), unique=False)
     is_read = Column(Boolean, unique=False)
+
+
+class Bookmark(Base):
+    __tablename__ = 'bookmark'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id'))
+    book_id = Column(Integer)
+    format = Column(String(collation='NOCASE'))
+    bookmark_key = Column(String)
 
 
 # Baseclass representing Downloads from calibre-web in app.db
@@ -252,6 +281,7 @@ class Settings(Base):
     config_anonbrowse = Column(SmallInteger, default=0)
     config_public_reg = Column(SmallInteger, default=0)
     config_default_role = Column(SmallInteger, default=0)
+    config_default_show = Column(SmallInteger, default=2047)
     config_columns_to_ignore = Column(String)
     config_use_google_drive = Column(Boolean)
     config_google_drive_client_id = Column(String)
@@ -259,10 +289,32 @@ class Settings(Base):
     config_google_drive_folder = Column(String)
     config_google_drive_calibre_url_base = Column(String)
     config_google_drive_watch_changes_response = Column(String)
-    config_columns_to_ignore = Column(String)
+    config_remote_login = Column(Boolean)
+    config_use_goodreads = Column(Boolean)
+    config_goodreads_api_key = Column(String)
+    config_goodreads_api_secret = Column(String)
+    config_mature_content_tags = Column(String)  # type: str
+    config_logfile = Column(String)
 
     def __repr__(self):
         pass
+
+
+class RemoteAuthToken(Base):
+    __tablename__ = 'remote_auth_token'
+
+    id = Column(Integer, primary_key=True)
+    auth_token = Column(String(8), unique=True)
+    user_id = Column(Integer, ForeignKey('user.id'))
+    verified = Column(Boolean, default=False)
+    expiration = Column(DateTime)
+
+    def __init__(self):
+        self.auth_token = hexlify(os.urandom(4))
+        self.expiration = datetime.datetime.now() + datetime.timedelta(minutes=10)  # 10 min from now
+
+    def __repr__(self):
+        return '<Token %r>' % self.id
 
 
 # Class holds all application specific settings in calibre-web
@@ -271,10 +323,11 @@ class Config:
         self.config_main_dir = os.path.join(os.path.normpath(os.path.dirname(
             os.path.realpath(__file__)) + os.sep + ".." + os.sep))
         self.db_configured = None
+        self.config_logfile = None
         self.loadSettings()
 
     def loadSettings(self):
-        data = session.query(Settings).first()
+        data = session.query(Settings).first()  # type: Settings
         self.config_calibre_dir = data.config_calibre_dir
         self.config_port = data.config_port
         self.config_calibre_web_title = data.config_calibre_web_title
@@ -286,6 +339,7 @@ class Config:
         self.config_anonbrowse = data.config_anonbrowse
         self.config_public_reg = data.config_public_reg
         self.config_default_role = data.config_default_role
+        self.config_default_show = data.config_default_show
         self.config_columns_to_ignore = data.config_columns_to_ignore
         self.config_use_google_drive = data.config_use_google_drive
         self.config_google_drive_client_id = data.config_google_drive_client_id
@@ -299,10 +353,26 @@ class Config:
         self.config_columns_to_ignore = data.config_columns_to_ignore
         self.db_configured = bool(self.config_calibre_dir is not None and
                 (not self.config_use_google_drive or os.path.exists(self.config_calibre_dir + '/metadata.db')))
+        self.config_remote_login = data.config_remote_login
+        self.config_use_goodreads = data.config_use_goodreads
+        self.config_goodreads_api_key = data.config_goodreads_api_key
+        self.config_goodreads_api_secret = data.config_goodreads_api_secret
+        self.config_mature_content_tags = data.config_mature_content_tags
+        if data.config_logfile:
+            self.config_logfile = data.config_logfile
 
     @property
     def get_main_dir(self):
         return self.config_main_dir
+
+    def get_config_logfile(self):
+        if not self.config_logfile:
+            return os.path.join(self.get_main_dir, "calibre-web.log")
+        else:
+            if os.path.dirname(self.config_logfile):
+                return self.config_logfile
+            else:
+                return os.path.join(self.get_main_dir, self.config_logfile)
 
     def role_admin(self):
         if self.config_default_role is not None:
@@ -328,13 +398,6 @@ class Config:
         else:
             return False
 
-    def role_delete_books(self):
-        if self.config_default_role is not None:
-            return True if self.config_default_role & ROLE_DELETE_BOOKS == ROLE_DELETE_BOOKS else False
-        else:
-            return False
-
-
     def role_passwd(self):
         if self.config_default_role is not None:
             return True if self.config_default_role & ROLE_PASSWD == ROLE_PASSWD else False
@@ -351,17 +414,67 @@ class Config:
         return bool((self.config_default_role is not None) and
                     (self.config_default_role & ROLE_DELETE_BOOKS == ROLE_DELETE_BOOKS))
 
+    def show_detail_random(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & DETAIL_RANDOM == DETAIL_RANDOM))
+
+    def show_language(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_LANGUAGE == SIDEBAR_LANGUAGE))
+
+    def show_series(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_SERIES == SIDEBAR_SERIES))
+
+    def show_category(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_CATEGORY == SIDEBAR_CATEGORY))
+
+    def show_hot_books(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_HOT == SIDEBAR_HOT))
+
+    def show_random_books(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_RANDOM == SIDEBAR_RANDOM))
+
+    def show_author(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_AUTHOR == SIDEBAR_AUTHOR))
+
+    def show_best_rated_books(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_BEST_RATED == SIDEBAR_BEST_RATED))
+
+    def show_read_and_unread(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_READ_AND_UNREAD == SIDEBAR_READ_AND_UNREAD))
+
+    def show_recent(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_RECENT == SIDEBAR_RECENT))
+
+    def show_sorted(self):
+        return bool((self.config_default_show is not None) and
+                    (self.config_default_show & SIDEBAR_SORTED == SIDEBAR_SORTED))
+
+    def mature_content_tags(self):
+        if sys.version_info > (3, 0): # Python3 str, Python2 unicode
+            lstrip = str.lstrip
+        else:
+            lstrip = unicode.lstrip
+        return list(map(lstrip, self.config_mature_content_tags.split(",")))
 
     def get_Log_Level(self):
-        ret_value=""
+        ret_value = ""
         if self.config_log_level == logging.INFO:
-            ret_value='INFO'
+            ret_value = 'INFO'
         elif self.config_log_level == logging.DEBUG:
-            ret_value='DEBUG'
+            ret_value = 'DEBUG'
         elif self.config_log_level == logging.WARNING:
-            ret_value='WARNING'
+            ret_value = 'WARNING'
         elif self.config_log_level == logging.ERROR:
-            ret_value='ERROR'
+            ret_value = 'ERROR'
         return ret_value
 
 
@@ -370,7 +483,9 @@ class Config:
 # rows with SQL commands
 def migrate_Database():
     if not engine.dialect.has_table(engine.connect(), "book_read_link"):
-        ReadBook.__table__.create(bind = engine)
+        ReadBook.__table__.create(bind=engine)
+    if not engine.dialect.has_table(engine.connect(), "bookmark"):
+        Bookmark.__table__.create(bind=engine)
 
     try:
         session.query(exists().where(User.locale)).scalar()
@@ -436,19 +551,66 @@ def migrate_Database():
         conn = engine.connect()
         conn.execute("ALTER TABLE user ADD column `sidebar_view` Integer DEFAULT 1")
         session.commit()
-        create=True
+        create = True
     try:
         if create:
-            conn.execute("SELET language_books FROM user")
+            conn = engine.connect()
+            conn.execute("SELECT language_books FROM user")
             session.commit()
     except exc.OperationalError:
         conn = engine.connect()
-        conn.execute("UPDATE user SET 'sidebar_view' = (random_books*"+str(SIDEBAR_RANDOM)+"+ language_books *"+
-                     str(SIDEBAR_LANGUAGE)+"+ series_books *"+str(SIDEBAR_SERIES)+"+ category_books *"+str(SIDEBAR_CATEGORY)+
-                     "+ hot_books *"+str(SIDEBAR_HOT)+"+"+str(SIDEBAR_AUTHOR)+"+"+str(DETAIL_RANDOM)+")")
+        conn.execute("UPDATE user SET 'sidebar_view' = (random_books* :side_random + language_books * :side_lang "
+            "+ series_books * :side_series + category_books * :side_category + hot_books * "
+            ":side_hot + :side_autor + :detail_random)"
+            ,{'side_random': SIDEBAR_RANDOM, 'side_lang': SIDEBAR_LANGUAGE, 'side_series': SIDEBAR_SERIES,
+            'side_category': SIDEBAR_CATEGORY, 'side_hot': SIDEBAR_HOT, 'side_autor': SIDEBAR_AUTHOR,
+            'detail_random': DETAIL_RANDOM})
         session.commit()
+    try:
+        session.query(exists().where(User.mature_content)).scalar()
+    except exc.OperationalError:
+        conn = engine.connect()
+        conn.execute("ALTER TABLE user ADD column `mature_content` INTEGER DEFAULT 1")
     if session.query(User).filter(User.role.op('&')(ROLE_ANONYMOUS) == ROLE_ANONYMOUS).first() is None:
         create_anonymous_user()
+    try:
+        session.query(exists().where(Settings.config_remote_login)).scalar()
+    except exc.OperationalError:
+        conn = engine.connect()
+        conn.execute("ALTER TABLE Settings ADD column `config_remote_login` INTEGER DEFAULT 0")
+    try:
+        session.query(exists().where(Settings.config_use_goodreads)).scalar()
+    except exc.OperationalError:
+        conn = engine.connect()
+        conn.execute("ALTER TABLE Settings ADD column `config_use_goodreads` INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE Settings ADD column `config_goodreads_api_key` String DEFAULT ''")
+        conn.execute("ALTER TABLE Settings ADD column `config_goodreads_api_secret` String DEFAULT ''")
+    try:
+        session.query(exists().where(Settings.config_mature_content_tags)).scalar()
+    except exc.OperationalError:
+        conn = engine.connect()
+        conn.execute("ALTER TABLE Settings ADD column `config_mature_content_tags` String DEFAULT ''")
+    try:
+        session.query(exists().where(Settings.config_default_show)).scalar()
+        session.commit()
+    except exc.OperationalError:  # Database is not compatible, some rows are missing
+        conn = engine.connect()
+        conn.execute("ALTER TABLE Settings ADD column `config_default_show` SmallInteger DEFAULT 2047")
+        session.commit()
+    try:
+        session.query(exists().where(Settings.config_logfile)).scalar()
+        session.commit()
+    except exc.OperationalError:  # Database is not compatible, some rows are missing
+        conn = engine.connect()
+        conn.execute("ALTER TABLE Settings ADD column `config_logfile` String DEFAULT ''")
+        session.commit()
+
+
+def clean_database():
+    # Remove expired remote login tokens
+    now = datetime.datetime.now()
+    session.query(RemoteAuthToken).filter(now > RemoteAuthToken.expiration).delete()
+
 
 def create_default_config():
     settings = Settings()
@@ -502,8 +664,8 @@ def create_admin_user():
     user.nickname = "admin"
     user.role = ROLE_USER + ROLE_ADMIN + ROLE_DOWNLOAD + ROLE_UPLOAD + ROLE_EDIT + ROLE_DELETE_BOOKS + ROLE_PASSWD
     user.sidebar_view = DETAIL_RANDOM + SIDEBAR_LANGUAGE + SIDEBAR_SERIES + SIDEBAR_CATEGORY + SIDEBAR_HOT + \
-            SIDEBAR_RANDOM + SIDEBAR_AUTHOR + SIDEBAR_BEST_RATED + SIDEBAR_READ_AND_UNREAD
-
+            SIDEBAR_RANDOM + SIDEBAR_AUTHOR + SIDEBAR_BEST_RATED + SIDEBAR_READ_AND_UNREAD + SIDEBAR_RECENT + \
+            SIDEBAR_SORTED
 
     user.password = generate_password_hash(DEFAULT_PASS)
 
@@ -520,7 +682,7 @@ Session.configure(bind=engine)
 session = Session()
 
 # generate database and admin and guest user, if no database is existing
-if not os.path.exists(dbpath):
+if not os.path.exists(cli.settingspath):
     try:
         Base.metadata.create_all(engine)
         create_default_config()
@@ -529,7 +691,9 @@ if not os.path.exists(dbpath):
     except Exception:
         raise
 else:
+    Base.metadata.create_all(engine)
     migrate_Database()
+    clean_database()
 
 # Generate global Settings Object accecable from every file
 config = Config()

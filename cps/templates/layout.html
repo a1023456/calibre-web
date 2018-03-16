@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="{{ g.user.locale }}">
   <head>
     <title>{{instance}} | {{title}}</title>
     <meta charset="utf-8">
@@ -8,6 +8,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
 
     <!-- Bootstrap -->
+    <link rel="apple-touch-icon" sizes="140x140" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link href="{{ url_for('static', filename='css/libs/bootstrap.min.css') }}" rel="stylesheet" media="screen">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet" media="screen">
@@ -19,27 +20,9 @@
       <script src="https://oss.maxcdn.com/libs/respond.js/1.3.0/respond.min.js"></script>
     <![endif]-->
 
-    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-    <!--script src="https://code.jquery.com/jquery.js"></script-->
-    <script src="{{ url_for('static', filename='js/libs/jquery.min.js') }}"></script>
-    <!-- Include all compiled plugins (below), or include individual files as needed -->
-    <script src="{{ url_for('static', filename='js/libs/bootstrap.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/libs/underscore-min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/libs/intention.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/libs/context.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/libs/plugins.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-
     {% block header %}{% endblock %}
   </head>
   <body>
-    <script>
-      $(document).ready(function(){
-        $("#btn-upload").change(function() {
-          $("#form-upload").submit();
-        });
-      });
-    </script>  
     <!-- Static navbar -->
     <div class="navbar navbar-default navbar-static-top" role="navigation">
       <div class="container-fluid">
@@ -50,12 +33,13 @@
             <span class="icon-bar"></span>
             <span class="icon-bar"></span>
           </button>
-          <a class="navbar-brand" href="{{url_for('index')}}">Calibre Web</a>
+          <a class="navbar-brand" href="{{url_for('index')}}">{{instance}}</a>
         </div>
-        {% if g.user.is_authenticated or g.user.is_anonymous() %}
+        {% if g.user.is_authenticated or g.user.is_anonymous %}
           <form class="navbar-form navbar-left" role="search" action="{{url_for('search')}}" method="GET">
             <div class="form-group input-group input-group-sm">
-              <input type="text" class="form-control" name="query" placeholder="{{_('Search')}}">
+              <label for="query" class="sr-only">{{_('Search')}}</label>
+              <input type="text" class="form-control" id="query" name="query" placeholder="{{_('Search')}}">
               <span class="input-group-btn">
                 <button type="submit" class="btn btn-default">{{_('Go!')}}</button>
               </span>
@@ -63,13 +47,13 @@
           </form>
         {% endif %}
         <div class="navbar-collapse collapse">
-          {% if g.user.is_authenticated or g.user.is_anonymous() %}
+          {% if g.user.is_authenticated or g.user.is_anonymous %}
           <ul class="nav navbar-nav ">
             <li><a href="{{url_for('advanced_search')}}"><span class="glyphicon glyphicon-search"></span><span class="hidden-sm"> {{_('Advanced Search')}}</span></a></li>
           </ul>
           {% endif %}
           <ul class="nav navbar-nav navbar-right" id="main-nav">
-            {% if g.user.is_authenticated or g.user.is_anonymous() %}
+            {% if g.user.is_authenticated or g.user.is_anonymous %}
               {% if g.user.role_upload() or g.user.role_admin()%}
                 {% if g.allow_upload %}
                     <li>
@@ -85,7 +69,7 @@
                 <li><a id="top_admin" href="{{url_for('admin')}}"><span class="glyphicon glyphicon-dashboard"></span><span class="hidden-sm"> {{_('Admin')}}</span></a></li>
               {% endif %}
               <li><a id="top_user" href="{{url_for('profile')}}"><span class="glyphicon glyphicon-user"></span><span class="hidden-sm"> {{g.user.nickname}}</span></a></li>
-              {% if not g.user.is_anonymous() %}
+              {% if not g.user.is_anonymous %}
               <li><a id="logout" href="{{url_for('logout')}}"><span class="glyphicon glyphicon-log-out"></span><span class="hidden-sm"> {{_('Logout')}}</span></a></li>
               {% endif %}
             {% endif %}
@@ -99,29 +83,45 @@
     </div>
     {% for message in get_flashed_messages(with_categories=True) %}
       {%if message[0] == "error" %}
-      <div class="row-fluid" style="margin-top: -20px; text-align: center;">
+      <div class="row-fluid text-center" style="margin-top: -20px;">
         <div id="flash_alert" class="alert alert-danger">{{ message[1] }}</div>
       </div>
       {%endif%}
       {%if message[0] == "info" %}
-      <div class="row-fluid" style="margin-top: -20px; text-align: center;">
+      <div class="row-fluid text-center" style="margin-top: -20px;">
         <div id="flash_info" class="alert alert-info">{{ message[1] }}</div>
       </div>
       {%endif%}
       {%if message[0] == "success" %}
-      <div class="row-fluid" style="margin-top: -20px; text-align: center;">
+      <div class="row-fluid text-center" style="margin-top: -20px;">
         <div id="flash_success" class="alert alert-success">{{ message[1] }}</div>
       </div>
       {%endif%}
     {% endfor %}
     <div class="container-fluid">
       <div class="row-fluid">
-        {% if g.user.is_authenticated or g.user.is_anonymous() %}
+        {% if g.user.is_authenticated or g.user.is_anonymous %}
         <div class="col-sm-2">
           <nav class="navigation">
             <ul class="list-unstyled" id="scnd-nav" intent in-standard-append="nav.navigation" in-mobile-after="#main-nav" in-mobile-class="nav navbar-nav">
               <li class="nav-head hidden-xs">{{_('Browse')}}</li>
-              <li id="nav_new"><a href="{{url_for('index')}}"><span class="glyphicon glyphicon-book"></span> {{_('New Books')}}</a></li>
+              {% if g.user.show_recent() %}
+              <li id="nav_new"><a href="{{url_for('index')}}"><span class="glyphicon glyphicon-book"></span> {{_('Recently Added')}}</a></li>
+              {%endif%}
+              {% if g.user.show_sorted() %}
+              <li class="dropdown">
+                <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">
+                  <span class="glyphicon glyphicon-sort-by-attributes"></span> {{_('Sorted Books')}}
+                  <span class="caret"></span>
+                </a>
+                <ul class="dropdown-menu">
+                  <li><a href="{{url_for('newest_books')}}">{{_('Sort By')}} {{_('Newest')}}</a></li>
+                  <li><a href="{{url_for('oldest_books')}}">{{_('Sort By')}} {{_('Oldest')}}</a></li>
+                  <li><a href="{{url_for('titles_ascending')}}">{{_('Sort By')}} {{_('Title')}} ({{_('Ascending')}})</a></li>
+                  <li><a href="{{url_for('titles_descending')}}">{{_('Sort By')}} {{_('Title')}}  ({{_('Descending')}})</a></li>
+                </ul>
+              </li>
+              {%endif%}
               {% if g.user.show_hot_books() %}
               <li id="nav_hot"><a href="{{url_for('hot_books')}}"><span class="glyphicon glyphicon-fire"></span> {{_('Hot Books')}}</a></li>
               {%endif%}
@@ -129,8 +129,10 @@
               <li><a href="{{url_for('best_rated_books')}}"><span class="glyphicon glyphicon-star"></span> {{_('Best rated Books')}}</a></li>
               {%endif%}
               {% if g.user.show_read_and_unread() %}
-              <li><a href="{{url_for('read_books')}}"><span class="glyphicon glyphicon-eye-open"></span> {{_('Read Books')}}</a></li>
-              <li><a href="{{url_for('unread_books')}}"><span class="glyphicon glyphicon-eye-close"></span> {{_('Unread Books')}}</a></li>
+                {% if not g.user.is_anonymous %}
+                  <li><a href="{{url_for('read_books')}}"><span class="glyphicon glyphicon-eye-open"></span> {{_('Read Books')}}</a></li>
+                {%endif%}
+                <li><a href="{{url_for('unread_books')}}"><span class="glyphicon glyphicon-eye-close"></span> {{_('Unread Books')}}</a></li>
               {%endif%}
               {% if g.user.show_random_books() %}
               <li id="nav_rand"><a href="{{url_for('discover')}}"><span class="glyphicon glyphicon-random"></span> {{_('Discover')}}</a></li>
@@ -141,11 +143,13 @@
               {% if g.user.show_series() %}
               <li id="nav_serie"><a href="{{url_for('series_list')}}"><span class="glyphicon glyphicon-bookmark"></span> {{_('Series')}}</a></li>
               {%endif%}
+              {% if g.user.show_author() %}
               <li id="nav_author"><a href="{{url_for('author_list')}}"><span class="glyphicon glyphicon-user"></span> {{_('Authors')}}</a></li>
+              {%endif%}
               {% if g.user.filter_language() == 'all' and g.user.show_language() %}
                 <li id="nav_lang"><a href="{{url_for('language_overview')}}"><span class="glyphicon glyphicon-flag"></span> {{_('Languages')}} </a></li>
               {%endif%}
-              {% if g.user.is_authenticated or g.user.is_anonymous() %}
+              {% if g.user.is_authenticated or g.user.is_anonymous %}
                 <li class="nav-head hidden-xs">{{_('Public Shelves')}}</li>
                 {% for shelf in g.public_shelfes %}
                   <li><a href="{{url_for('show_shelf', shelf_id=shelf.id)}}"><span class="glyphicon glyphicon-list"></span> {{shelf.name}}</a></li>
@@ -154,7 +158,7 @@
                 {% for shelf in g.user.shelf %}
                   <li><a href="{{url_for('show_shelf', shelf_id=shelf.id)}}"><span class="glyphicon glyphicon-list"></span> {{shelf.name}}</a></li>
                 {% endfor %}
-              {% if not g.user.is_anonymous() %}
+              {% if not g.user.is_anonymous %}
                 <li id="nav_createshelf" class="create-shelf"><a href="{{url_for('create_shelf')}}">{{_('Create a Shelf')}}</a></li>
                 <li id="nav_about"><a href="{{url_for('stats')}}"><span class="glyphicon glyphicon-info-sign"></span> {{_('About')}}</a></li>
               {% endif %}
@@ -168,6 +172,10 @@
           {% block body %}{% endblock %}
           {% if pagination and (pagination.has_next or pagination.has_prev) %}
             <div class="pagination">
+              {% if pagination.has_prev %}
+              <a class="previous" href="{{ url_for_other_page(pagination.page - 1)
+                }}">&laquo; {{_('Previous')}}</a>
+              {% endif %}
             {% for page in pagination.iter_pages() %}
               {% if page %}
                 {% if page != pagination.page %}
@@ -181,14 +189,48 @@
             {% endfor %}
             {% if pagination.has_next %}
               <a class="next" href="{{ url_for_other_page(pagination.page + 1)
-                }}">Next &raquo;</a>
+                }}">{{_('Next')}} &raquo;</a>
             {% endif %}
             </div>
           {% endif %}
         </div>
       </div>
     </div>
+    <div class="modal fade" id="bookDetailsModal" tabindex="-1" role="dialog" aria-labelledby="bookDetailsModalLabel">
+      <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="bookDetailsModalLabel">{{_('Book Details')}}</h4>
+          </div>
+          <div class="modal-body">...</div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{_('Close')}}</button>
+          </div>
+        </div>
+      </div>
+    </div>
     {% block modal %}{% endblock %}
+
+    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+    <!--script src="https://code.jquery.com/jquery.js"></script-->
+    <script src="{{ url_for('static', filename='js/libs/jquery.min.js') }}"></script>
+    <!-- Include all compiled plugins (below), or include individual files as needed -->
+    <script src="{{ url_for('static', filename='js/libs/bootstrap.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/underscore-min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/intention.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/context.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/plugins.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/jquery.form.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script type="text/javascript">
+        $(function() {
+            $("#btn-upload").change(function() {
+                $("#form-upload").submit();
+            });
+        });
+    </script>
+
     {% block js %}{% endblock %}
   </body>
 </html>

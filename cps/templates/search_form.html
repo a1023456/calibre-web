@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block body %}
 <div class="col-sm-8">
-  <form role="form" action="{{ url_for('advanced_search') }}" method="GET">
+  <form role="form" id="search" action="{{ url_for('advanced_search') }}" method="GET">
     <div class="form-group">
       <label for="book_title">{{_('Book Title')}}</label>
       <input type="text" class="form-control" name="book_title" id="book_title" value="">
@@ -28,7 +28,7 @@
     <div class="form-group">
       <div class="btn-toolbar btn-toolbar-lg" data-toggle="buttons">
         {% for tag in tags %}
-          <label id="tag_{{tag.id}}" class="btn btn-danger tags_click">
+          <label id="exclude_tag_{{tag.id}}" class="btn btn-danger tags_click">
             <input type="checkbox" autocomplete="off" name="exclude_tag" id="exclude_tag" value="{{tag.id}}">{{tag.name}}</input>
           </label>
         {% endfor %}
@@ -48,7 +48,7 @@
     <div class="form-group">
       <div class="btn-toolbar btn-toolbar-lg" data-toggle="buttons">
         {% for serie in series %}
-          <label id="serie_{{serie.id}}" class="btn btn-danger serie_click">
+          <label id="exclude_serie_{{serie.id}}" class="btn btn-danger serie_click">
             <input type="checkbox" autocomplete="off" name="exclude_serie" id="exclude_serie" value="{{serie.id}}">{{serie.name}}</input>
           </label>
         {% endfor %}
@@ -69,7 +69,7 @@
       <div class="form-group">
         <div class="btn-toolbar btn-toolbar-lg" data-toggle="buttons">
           {% for language in languages %}
-            <label id="language_{{language.id}}" class="btn btn-danger language_click">
+            <label id="exclude_language_{{language.id}}" class="btn btn-danger language_click">
               <input type="checkbox" autocomplete="off" name="exclude_language" id="exclude_language" value="{{language.id}}">{{language.name}}</input>
             </label>
           {% endfor %}
